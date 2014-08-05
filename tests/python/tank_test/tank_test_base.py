@@ -155,12 +155,7 @@ class TankTestBase(unittest.TestCase):
         project_cache_dir = os.path.join(project_tank, "cache")
         os.mkdir(project_cache_dir)
 
-        # create back-link file from project storage
-        data = "- {darwin: '%s', linux2: '%s', win32: '%s'}" % (project_tank, project_tank, project_tank) 
-        self.create_file(os.path.join(project_tank, "config", "tank_configs.yml"), data)
-
-        # add files needed by the pipeline config
-        
+        # add files needed by the pipeline config        
         pc_yml = os.path.join(project_tank, "config", "core", "pipeline_configuration.yml")
         pc_yml_data = "{ project_name: %s, pc_id: 123, project_id: 12345, pc_name: Primary}\n\n" % self.project["tank_name"]        
         self.create_file(pc_yml, pc_yml_data)
@@ -227,13 +222,6 @@ class TankTestBase(unittest.TestCase):
         self.alt_root_1 = os.path.join(self.tank_temp, "alternate_1", project_name)
         self.alt_root_2 = os.path.join(self.tank_temp, "alternate_2", project_name)
         
-        # add backlink files to storage
-        tank_code = os.path.join(self.project_root, "tank")
-        data = "- {darwin: '%s', linux2: '%s', win32: '%s'}" % (tank_code, tank_code, tank_code) 
-        self.create_file(os.path.join(self.alt_root_1, "tank", "config", "tank_configs.yml"), data)
-        self.create_file(os.path.join(self.alt_root_2, "tank", "config", "tank_configs.yml"), data)
-
-
         # Write roots file
         roots = {"primary": {}, "alternate_1": {}, "alternate_2": {}}
         for os_name in ["windows_path", "linux_path", "mac_path"]:
