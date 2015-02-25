@@ -28,6 +28,118 @@ import inspect
 
 class TankQDialog(TankDialogBase):
     """
+    Base tank dialog that wraps around app widgets. Contains a
+    single instance of the TankMainForm widget that in turn hosts
+    the app widget
+    """
+    
+    # Signal emitted when dialog is closed either via closing the dialog directly
+    # or as a result of the child widget being closed.    
+    dialog_closed = QtCore.Signal(object)
+    
+    def __init__(self, title, bundle, widget, parent):
+        """
+        Constructor
+        """
+        TankDialogBase.__init__(self, parent)
+        
+        # create main form - this is the container for everything else:
+        self._main_form = TankMainForm(title, bundle, widget, self)
+        
+        # watch for the widget being closed:
+        self._main_form.widget_closed.connect(self._on_widget_closed)
+        
+        # create and set layout for dialog:
+        layout = QtGui.QVBoxLayout()
+        layout.addWidget(self._main_form)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.setSpacing(0)
+        self.setLayout(layout)
+        
+        self.setWindowTitle("Shotgun: %s" % title)
+        
+        # adjust size of the outer window to match the hosted widget size
+        widget_sz = widget.size()#widget.sizeHint()
+        self.resize(widget_sz.width(), widget_sz.height() + TankMainForm.TOOLBAR_HEIGHT)
+        
+    def detach_widget(self):
+        """
+        Pass through to the contained form so that calling code
+        can manually detach the embedded widget and manage the
+        lifetime more explicitly to help gc
+        """
+        return self._main_form.detach_widget()
+        
+    def done(self, exit_code):
+        """
+        Override 'done' method.  This method is called regardless 
+        of how the dialog is closed so it's a good place to ensure
+        everything is cleaned up nicely.
+        
+        :param exit_code:   The exit code to use if this is
+                            being shown as a modal dialog.
+        """
+        if self._main_form:
+            # explicitly call close on the main form - this ensures 
+            # any custom closeEvent code is executed properly
+            if self._main_form.close():
+                # Note that this will indirectly call _do_done() via
+                # _on_widget_closed so there is no need to call it 
+                # explicitly from here!                
+                pass
+            else:
+                # widget supressed the close!
+                return
+        else:
+            # process 'done' so that the exit code
+            # gets correctly propogated and the close
+            # event is emitted.
+            self._do_done(exit_code)
+        
+    def _do_done(self, exit_code):
+        """
+        Internal method used to execute the base class done() method
+        and emit the dialog_closed signal.
+        
+        This may get called directly from 'done' but may also get called
+        when the embedded widget is closed and the dialog is modal.
+    
+        :param exit_code:   The exit code to use if this is
+                            being shown as a modal dialog.        
+        """        
+        # call base done() implementation - this sets
+        # the exit code returned from exec()/show_modal():
+        TankDialogBase.done(self, exit_code)
+        
+        # and emit dialog closed signal:
+        self.dialog_closed.emit(self)
+
+    def closeEvent(self, event):
+        """
+        Override the dialog closeEvent handler so that it first tries 
+        to close the enclosed widget.
+        
+        If the enclosed widget doesn't close then we should ignore the
+        event so the dialog doesn't close.
+
+        :param event:   The close event to handle
+        """
+        if self._main_form:
+            if not self._main_form.close():
+                # failed to close the widget which means we
+                # shouldn't close the dialog!
+                event.ignore()
+        
+    def _on_widget_closed(self, exit_code):
+        """
+        Called when the embedded widget is closed to ensure this dialog 
+        also closes
+        """
+        # close QDialog
+        self._do_done(exit_code)
+        
+class TankMainForm(QtGui.QWidget):
+    """
     Wraps around app widgets. Contains Tank specific toolbars and configuration info
     in addition to the user object that it is hosting.
     """
@@ -121,7 +233,6 @@ class TankQDialog(TankDialogBase):
                 widgets.extend(w.children())
                 continue
 
-
     @staticmethod
     def wrap_widget_class(widget_class):
         """
@@ -149,7 +260,7 @@ class TankQDialog(TankDialogBase):
             
             # apply fix to make sure all workers in pre v0.1.17 tk-framework-widget
             # BrowserWidgets are stopped correctly!
-            TankQDialog._stop_buggy_background_worker_qthreads(self)
+            TankMainForm._stop_buggy_background_worker_qthreads(self)
             
             # if accepted then emit signal:
             self._tk_widgetwrapper_widget_closed.emit()
@@ -160,17 +271,14 @@ class TankQDialog(TankDialogBase):
                                      "closeEvent":closeEvent})
         return derived_widget_class
     
-    # Signal emitted when dialog is closed
-    # either via closing the dialog directly
-    # or as a result of the child widget 
-    # being closed.
-    dialog_closed = QtCore.Signal(object)    
+    # Signal emitted when the embedded widget is closed.
+    widget_closed = QtCore.Signal(int)# exit_code
 
     def __init__(self, title, bundle, widget, parent):
         """
         Constructor
         """
-        TankDialogBase.__init__(self, parent)
+        QtGui.QWidget.__init__(self, parent)
         
         # indicates that we are showing the info pane
         self._info_mode = False
@@ -329,7 +437,7 @@ class TankQDialog(TankDialogBase):
         # adjust size of the outer window to match the hosted widget size
         dlg_height = self._widget.height()
         if show_tk_title_bar:
-            dlg_height += TankQDialog.TOOLBAR_HEIGHT
+            dlg_height += TankMainForm.TOOLBAR_HEIGHT
         self.resize(self._widget.width(), dlg_height)
         
         ########################################################################################
@@ -369,7 +477,7 @@ class TankQDialog(TankDialogBase):
             return True
         else:
             # standard event processing
-            return TankDialogBase.event(self, event)
+            return QtGui.QWidget.event(self, event)
 
     def closeEvent(self, event):
         """
@@ -386,50 +494,6 @@ class TankQDialog(TankDialogBase):
                 # failed to close the widget which means we
                 # shouldn't close the dialog!
                 event.ignore()
-
-    def done(self, exit_code):
-        """
-        Override 'done' method to emit the dialog_closed
-        event.  This method is called regardless of how 
-        the dialog is closed.
-        
-        :param exit_code:   The exit code to use if this is
-                            being shown as a modal dialog.
-        """
-        if self._widget:
-            # explicitly call close on the widget - this ensures 
-            # any custom closeEvent code is executed properly
-            if self._widget.close():
-                # Note that this will indirectly call _do_done()
-                # so there is no need to call it explicitly from
-                # here!
-                pass
-            else:
-                # widget supressed the close!
-                return
-        else:
-            # process 'done' so that the exit code
-            # gets correctly propogated and the close
-            # event is emitted.
-            self._do_done(exit_code)
-        
-    def _do_done(self, exit_code):
-        """
-        Internal method used to execute the base class done() method
-        and emit the dialog_closed signal.
-        
-        This may get called directly from 'done' but may also get called
-        when the embedded widget is closed and the dialog is modal.
-
-        :param exit_code:   The exit code to use if this is
-                            being shown as a modal dialog.        
-        """
-        # call base done() implementation - this sets
-        # the exit code returned from exec()/show_modal():
-        TankDialogBase.done(self, exit_code)
-
-        # and emit dialog closed signal:
-        self.dialog_closed.emit(self)
           
     def detach_widget(self):
         """
@@ -449,7 +513,7 @@ class TankQDialog(TankDialogBase):
             # BrowserWidgets are stopped correctly!
             # Note, this is the only place this can be done for non-wrapped
             # widgets as once it's detached we have no further access to it!
-            TankQDialog._stop_buggy_background_worker_qthreads(self)
+            TankMainForm._stop_buggy_background_worker_qthreads(self)
             
             # reset the widget closeEvent function.  Note that 
             # python still thinks there is a circular reference
@@ -466,7 +530,6 @@ class TankQDialog(TankDialogBase):
         widget = self._widget    
         self._widget = None
         return widget
-        
         
     def _widget_closeEvent(self, event):
         """
@@ -497,12 +560,8 @@ class TankQDialog(TankDialogBase):
         if self._widget and hasattr(self._widget, "exit_code"):
             exit_code = self._widget.exit_code        
         
-        # and call done to close the dialog with the correct exit 
-        # code and emit the dialog closed signal.
-        #
-        # Note that we don't call done() directly as it would 
-        # recursively call close on our widget again!
-        self._do_done(exit_code)
+        # emit a signal indicating that this widget has been closed
+        self.widget_closed.emit(exit_code)
 
     def _on_arrow(self):
         """
@@ -526,7 +585,7 @@ class TankQDialog(TankDialogBase):
                     # make sure page1 stays on top
                     self.ui.page_1.raise_()
                     # and move the page 1 window to allow room for page 2, the info panel:
-                    self.ui.page_1.move(self.ui.page_1.x()-(TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH), 
+                    self.ui.page_1.move(self.ui.page_1.x()-(TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH), 
                                         self.ui.page_1.y())
             finally:
                 self.setUpdatesEnabled(True)
@@ -551,7 +610,7 @@ class TankQDialog(TankDialogBase):
                 # put this window top most to avoid flickering
                 self.ui.page_2.raise_()       
                 # and move the page 1 window back to its current position
-                self.ui.page_1.move(self.ui.page_1.x()-(TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH), 
+                self.ui.page_1.move(self.ui.page_1.x()-(TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH), 
                                     self.ui.page_1.y())
                 # now that the first window is positioned correctly, make it top most again.
                 self.ui.page_1.raise_()       
@@ -561,7 +620,7 @@ class TankQDialog(TankDialogBase):
             self.anim = QtCore.QPropertyAnimation(self.ui.page_1, "pos")
             self.anim.setDuration(600)
             self.anim.setStartValue(QtCore.QPoint(self.ui.page_1.x(), self.ui.page_1.y() ))
-            self.anim.setEndValue(QtCore.QPoint(self.ui.page_1.x()+(TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH), 
+            self.anim.setEndValue(QtCore.QPoint(self.ui.page_1.x()+(TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH), 
                                                 self.ui.page_1.y() ))
             self.anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
             self.anim.finished.connect( self._finished_show_anim )
@@ -569,7 +628,7 @@ class TankQDialog(TankDialogBase):
             self.anim2 = QtCore.QPropertyAnimation(self.ui.page_2, "pos")
             self.anim2.setDuration(600)
             self.anim2.setStartValue(QtCore.QPoint(self.ui.page_2.x(), self.ui.page_2.y() ))
-            self.anim2.setEndValue(QtCore.QPoint(self.ui.page_2.x()+TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH, 
+            self.anim2.setEndValue(QtCore.QPoint(self.ui.page_2.x()+TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH, 
                                                  self.ui.page_2.y() ))
             self.anim2.setEasingCurve(QtCore.QEasingCurve.OutCubic)
 
@@ -590,7 +649,7 @@ class TankQDialog(TankDialogBase):
 
             self.anim = QtCore.QPropertyAnimation(self.ui.page_2, "pos")
             self.anim.setDuration(600)
-            self.anim.setStartValue(QtCore.QPoint(self.ui.page_2.x()+(TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH), 
+            self.anim.setStartValue(QtCore.QPoint(self.ui.page_2.x()+(TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH), 
                                                   self.ui.page_2.y() ))
             self.anim.setEndValue(QtCore.QPoint(self.ui.page_2.x(), self.ui.page_2.y() ))
             self.anim.setEasingCurve(QtCore.QEasingCurve.OutCubic)
@@ -598,7 +657,7 @@ class TankQDialog(TankDialogBase):
             self.anim2 = QtCore.QPropertyAnimation(self.ui.page_1, "pos")
             self.anim2.setDuration(600)
             self.anim2.setStartValue(QtCore.QPoint(self.ui.page_1.x(), self.ui.page_1.y() ))
-            self.anim2.setEndValue(QtCore.QPoint(self.ui.page_1.x()-(TankQDialog.GRADIENT_WIDTH+TankQDialog.INFO_WIDTH), 
+            self.anim2.setEndValue(QtCore.QPoint(self.ui.page_1.x()-(TankMainForm.GRADIENT_WIDTH+TankMainForm.INFO_WIDTH), 
                                                  self.ui.page_1.y() ))
             self.anim2.setEasingCurve(QtCore.QEasingCurve.OutCubic)
             self.anim2.finished.connect( self._finished_show_anim )

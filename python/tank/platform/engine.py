@@ -638,7 +638,7 @@ class Engine(TankBundle):
         from .qt import tankqdialog
                 
         # construct the widget object
-        derived_widget_class = tankqdialog.TankQDialog.wrap_widget_class(widget_class)
+        derived_widget_class = tankqdialog.TankMainForm.wrap_widget_class(widget_class)
         widget = derived_widget_class(*args, **kwargs)
         
         # keep track of some info for debugging object lifetime
