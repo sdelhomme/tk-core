@@ -520,6 +520,11 @@ class Tank(object):
         """
         return context.from_entity(self, entity_type, entity_id)
 
+    def context_from_entities(self, project=None, entity=None, step=None, task=None, user=None):
+        """
+        """
+        return context.from_entities(self, project, entity, step, task, user)
+
     def synchronize_filesystem_structure(self, full_sync=False):
         """
         Ensures that the filesystem structure on this machine is in sync
