@@ -522,6 +522,20 @@ class Tank(object):
 
     def context_from_entities(self, project=None, entity=None, step=None, task=None, user=None):
         """
+        Derive a context from a set of known Shotgun entities.
+        
+        Note: It is the responsibility of the calling code to ensure that both the entities and the
+        relationships between them are valid.  
+        
+        This only results in a Shotgun query if context_additional_entities are specified in the
+        configuration!        
+        
+        :param project: The project entity dictionary to use when constructing the context
+        :param entity:  The entity entity dictionary to use when constructing the context
+        :param step:    The step entity dictionary to use when constructing the context
+        :param task:    The task entity dictionary to use when constructing the context
+        :param user:    The user entity dictionary to use when constructing the context
+        :returns:       A Context constructed from the specified entities.        
         """
         return context.from_entities(self, project, entity, step, task, user)
 
