@@ -61,7 +61,6 @@ class YamlCache(object):
         if (not cache_entry
             or cache_entry["modified_at"] != modified_at
             or cache_entry["file_size"] != file_size):
-            print "LOADING FROM SCRATCH"
             # try to load the file data:
             try:
                 fh = open(path, "r")
